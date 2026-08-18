@@ -1,0 +1,708 @@
+{
+  "_說明": {
+    "window_title": "遊戲視窗標題的一部分，比對時不分大小寫。留空字串＝直接抓整個螢幕。",
+    "region": "手動指定擷取範圍 [x, y, 寬, 高]（螢幕絕對座標）。填了就不看 window_title。null＝自動。",
+    "window_padding": "視窗四邊要切掉的邊框像素 [左, 上, 右, 下]，抓到標題列時用得到。",
+    "match_threshold": "模板比對的及格分數，0~1。抓不到就調低（0.75），亂抓就調高（0.9）。",
+    "scales": "模板縮放倍率清單。模板跟現在解析度一樣就維持 [1.0]；不一樣可填 [0.9, 1.0, 1.1]（會變慢）。",
+    "move_method": "滑鼠移動方式：win32（多螢幕比較準）或 pydirectinput（少數遊戲才吃）。",
+    "步驟種類": {
+      "sleep": "{\"do\": \"sleep\", \"sec\": 2.0}",
+      "click": "{\"do\": \"click\", \"template\": \"開始.png\", \"timeout\": 60, \"offset\": [0, 0]}  等圖出現再點它",
+      "click_at": "{\"do\": \"click_at\", \"pos\": [640, 400]}  點擷取範圍內的固定座標",
+      "key": "{\"do\": \"key\", \"key\": \"esc\", \"times\": 2, \"interval\": 0.3}",
+      "wait_for": "{\"do\": \"wait_for\", \"template\": \"標題.png\", \"timeout\": 120}  等圖出現",
+      "wait_gone": "{\"do\": \"wait_gone\", \"template\": \"載入中.png\", \"timeout\": 180}  等圖消失",
+      "spam": "{\"do\": \"spam\", \"template\": \"跳過.png\", \"until\": \"首抽.png\", \"timeout\": 180, \"interval\": 1.0}  狂點某張圖直到 until 出現；不填 until 就點到它自己消失",
+      "spam_at": "{\"do\": \"spam_at\", \"pos\": [640, 400], \"until\": \"結果.png\", \"timeout\": 120, \"interval\": 0.8}  狂點固定座標",
+      "共用參數": "每一步都能加 \"optional\": true（逾時就跳過不算失敗）、\"threshold\": 0.8、\"note\": \"備註\""
+    },
+    "window_pos": "強制把模擬器視窗固定在這個位置。模板綁定視窗座標，視窗被移動或底部被工作列蓋住就會全失效。null＝不干涉。",
+    "game_window_size": "遊戲執行中模擬器該有的視窗尺寸。尺寸不符＝遊戲閃退了，會自動重開。",
+    "launcher_icon": "模擬器桌面上遊戲圖示的模板檔名，閃退後用它重新啟動。",
+    "dismiss_popups": "會在不特定時機跳出的彈窗。每次等待時都會檢查，看到就點掉。用於綁定帳號提示這類東西。",
+    "notify_mail": "中獎時寄信通知。密碼不放這裡，改用環境變數（password_env 指定名稱），因為設定檔是純文字，可能被連同模板一起備份出去。Gmail 要用「應用程式密碼」，一般登入密碼不能用於 SMTP。",
+    "hit_ovr": "卡片左上角的 OVR 必須等於這個數字才算命中。null＝不管 OVR，只看名字。",
+    "ovr_region": "OVR 數字在畫面上的位置 [x,y,寬,高]，相對於擷取區。",
+    "hit_targets": "要抓的卡片，任一組滿足就算命中。keywords 用姓氏中段（避開字首字尾，OCR 最容易在那裡出錯），ovr 是左上角數字。",
+    "app_restart": "步驟。把 App 關掉重開，不清資料——帳號、進度、權限都留著，所以不用再走一次條款／球隊瀏覽／訪客登入（那要四分半）。卡在奇怪畫面時先試這個。",
+    "app_reset": "步驟。pm clear 清掉 App 資料＝換一個全新訪客帳號，之後必須重走首次啟動流程。只有真的需要新帳號時才用（也就是 reset_flow）。",
+    "auto_recover": "流程卡住而遊戲沒閃退時要不要自動重置。false（預設）＝停下來、畫面留在原地、寄信問人；true＝走 recover_flow（app_reset，會清掉整個帳號）。閃退不受這個影響，一律自動重開遊戲。",
+    "self_heal_attempts": "卡住時先自己試幾次「關掉 App 重開（不刪資料）」。重開後若不在創立球隊，會再走一次遊戲內重置。試滿這個次數都沒用才寄信打擾人。現場截圖是在自救之前拍的——順序反過來的話，等要通知時該看的畫面早就被自救洗掉了。",
+    "wait_for_human": "卡住需要人處理時，停著等而不是收工。你只要把畫面弄回「創立球隊」，程式就會自己偵測到並繼續，不用回來重下指令。等待期間畫面完全不動，現場留著給你看。human_check_interval 是幾秒檢查一次，human_wait_timeout 是最多等幾秒（0＝一直等）。",
+    "on_fail": "步驟參數。標成 \"ask\" 的步驟卡住時一律問人，即使 auto_recover 是 true。用在需要人看一眼才知道怎麼處理的地方。",
+    "input_mode": "window＝用滑鼠點實體視窗（會佔用滑鼠）；adb＝透過 ADB 直接對 Android 下指令，不碰滑鼠，可以同時用電腦。",
+    "adb": "ADB 設定。scale/offset 是把 Android 畫面對齊既有模板座標系的參數，改了就要重測模板。device_size 是預期的裝置解析度，開跑前會驗，對不上就擋下來（模板全是在這個解析度上裁的）。ld_index 必須跟 serial 指同一台，否則 paste 會把文字打到另一台。grant_permissions 是 pm clear 之後要補回去的權限——不補的話重開遊戲會彈出授權對話框擋住畫面，而且會被誤判成閃退。",
+    "instances": "雙開用。每個程序帶 --instance A 或 B，只覆寫 serial 和 ld_index，流程／模板／命中條件全部共用這一份設定檔（分兩份會各自漂移）。log 會分成 reroll.A.log / reroll.B.log，截圖分到 shots/A、hits/A。不帶 --instance 就是單開，路徑維持原樣。"
+  },
+  "window_title": "雷電模擬器",
+  "region": null,
+  "monitor": 1,
+  "window_padding": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "focus_window": true,
+  "template_dir": "templates",
+  "shot_dir": "shots",
+  "hit_dir": "hits",
+  "match_threshold": 0.85,
+  "scales": [
+    1.0
+  ],
+  "poll_interval": 0.15,
+  "action_delay": 0.35,
+  "move_delay": 0.08,
+  "click_hold": 0.06,
+  "move_method": "win32",
+  "tesseract_cmd": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
+  "ocr_lang": "eng",
+  "ocr_region": [
+    195,
+    446,
+    170,
+    36
+  ],
+  "hit_templates": [],
+  "stop_on_hit": true,
+  "max_rounds": 0,
+  "max_fails": 3,
+  "flow": [
+    {
+      "do": "wait_for",
+      "template": "創立球隊.png",
+      "timeout": 30,
+      "note": "A1 等創立球隊畫面"
+    },
+    {
+      "do": "click",
+      "template": "球隊_MIN.png",
+      "timeout": 10,
+      "optional": true,
+      "note": "A2a 直接點列表裡的 MIN（找不到就跳過，靠下一步的箭頭掃描補救）"
+    },
+    {
+      "do": "spam_at",
+      "pos": [
+        503,
+        290
+      ],
+      "until": "球隊_CWS標題.png",
+      "timeout": 60,
+      "interval": 0.6,
+      "note": "A2b 右箭頭走到 CWS（接在 MIN 後只需兩下）"
+    },
+    {
+      "do": "click",
+      "template": "創隊_確認.png",
+      "timeout": 20,
+      "note": "A4 按確認"
+    },
+    {
+      "do": "wait_for",
+      "template": "隊長_選擇.png",
+      "timeout": 40,
+      "note": "A5 等選擇按鈕出現＝隊長畫面真的可互動了"
+    },
+    {
+      "do": "sleep",
+      "sec": 2.0,
+      "note": "A5b 讓進場動畫結束"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        370,
+        673
+      ],
+      "note": "A6 點第三個球員 G. Crochet'24"
+    },
+    {
+      "do": "sleep",
+      "sec": 1.0,
+      "note": "A6b 讓點擊生效"
+    },
+    {
+      "do": "wait_gone",
+      "template": "隊長_選擇.png",
+      "timeout": 15,
+      "note": "A6c 等按鈕消失＝鏡頭拉近動畫開始"
+    },
+    {
+      "do": "click",
+      "template": "隊長_選擇.png",
+      "timeout": 40,
+      "note": "A7 按選擇"
+    },
+    {
+      "do": "click",
+      "template": "創隊完成_確認.png",
+      "timeout": 40,
+      "note": "A8 創隊完成確認"
+    },
+    {
+      "do": "spam",
+      "template": "Skip.png",
+      "until": [
+        "跳過教學_確定.png",
+        "主畫面_已選.png"
+      ],
+      "timeout": 120,
+      "interval": 1.5,
+      "note": "A9 點 Skip，直到跳出確認框或直接進主畫面"
+    },
+    {
+      "do": "click",
+      "template": "跳過教學_確定.png",
+      "timeout": 30,
+      "note": "A10 確定跳過教學",
+      "optional": true
+    },
+    {
+      "do": "wait_for",
+      "template": "主畫面_已選.png",
+      "timeout": 90,
+      "note": "A11 等回到主畫面"
+    },
+    {
+      "do": "click",
+      "template": "陣容.png",
+      "timeout": 30,
+      "note": "1 從主畫面點陣容"
+    },
+    {
+      "do": "wait_for",
+      "template": "陣容_已載入.png",
+      "timeout": 30,
+      "note": "1b 等陣容畫面真的載入完（避免抓到背景草地）"
+    },
+    {
+      "do": "sleep",
+      "sec": 1.5,
+      "note": "1c 讓卡片動畫定住"
+    },
+    {
+      "do": "click_color",
+      "region": [
+        40,
+        260,
+        500,
+        460
+      ],
+      "hue": [
+        35,
+        85
+      ],
+      "sat_min": 100,
+      "val_min": 60,
+      "min_area": 1500,
+      "timeout": 30,
+      "note": "B2 用顏色點綠卡（不綁特定球員）",
+      "max_area": 8000
+    },
+    {
+      "do": "click",
+      "template": "更換.png",
+      "timeout": 30,
+      "note": "3 選單選更換"
+    },
+    {
+      "do": "click",
+      "template": "候選卡_Meidroth.png",
+      "timeout": 30,
+      "note": "4 選下方候選卡"
+    },
+    {
+      "do": "click",
+      "template": "更換_確認鈕.png",
+      "timeout": 30,
+      "note": "5 按底部更換"
+    },
+    {
+      "do": "click",
+      "template": "球隊管理.png",
+      "timeout": 30,
+      "note": "6 點球隊管理"
+    },
+    {
+      "do": "click",
+      "template": "確定.png",
+      "timeout": 30,
+      "note": "7 儲存陣容確定"
+    },
+    {
+      "do": "spam",
+      "template": "組合.png",
+      "until": "組合_已載入.png",
+      "timeout": 60,
+      "interval": 1.5,
+      "note": "8 點組合，點到組合畫面載入為止"
+    },
+    {
+      "do": "wait_for",
+      "template": "組合_已載入.png",
+      "timeout": 30,
+      "note": "8b 等組合畫面與卡片列表載入完"
+    },
+    {
+      "do": "sleep",
+      "sec": 2.0,
+      "note": "8c 讓列表定住"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        103,
+        708
+      ],
+      "note": "9 點第1張卡",
+      "settle": 0.8
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        371,
+        708
+      ],
+      "note": "10 點第4張卡",
+      "settle": 0.8
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        282,
+        708
+      ],
+      "note": "11 點第3張卡",
+      "settle": 0.8
+    },
+    {
+      "do": "spam",
+      "template": "道具_階級.png",
+      "until": "道具_保護券.png",
+      "timeout": 40,
+      "interval": 1.2,
+      "on_fail": "ask",
+      "note": "12 點道具階級，點到保護券畫面出現（單次 click 若沒生效，下一步會白等 30 秒才失敗）"
+    },
+    {
+      "do": "click",
+      "template": "道具_保護券.png",
+      "timeout": 30,
+      "on_fail": "ask",
+      "note": "13 選中間保護券。找不到可選對象時停下來問人，不要重置（見 on_fail）"
+    },
+    {
+      "do": "spam",
+      "template": "道具_確定.png",
+      "timeout": 30,
+      "interval": 1.2,
+      "note": "14 道具確定（點到對話框消失）"
+    },
+    {
+      "do": "click",
+      "template": "組合_執行鈕.png",
+      "timeout": 30,
+      "note": "15 按組合"
+    },
+    {
+      "do": "spam",
+      "template": "組合_執行鈕.png",
+      "until": "組合_最終確定.png",
+      "timeout": 40,
+      "interval": 1.5,
+      "note": "16 持續點組合直到最終確認出現"
+    },
+    {
+      "do": "spam",
+      "template": "組合_最終確定.png",
+      "timeout": 30,
+      "interval": 1.2,
+      "note": "16b 點最終確定，點到對話框消失"
+    },
+    {
+      "do": "spam_at",
+      "pos": [
+        300,
+        890
+      ],
+      "until": "選卡提示.png",
+      "timeout": 40,
+      "interval": 1.2,
+      "note": "17 點畫面跳過演出，直到出現選卡提示"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        125,
+        503
+      ],
+      "note": "B18 五選一，選左上第一張"
+    },
+    {
+      "do": "wait_for",
+      "template": "查看結果.png",
+      "timeout": 30,
+      "note": "B19 等查看結果鈕出現"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        281,
+        947
+      ],
+      "note": "B20 按查看結果"
+    },
+    {
+      "do": "wait_for",
+      "template": "翻牌_確認.png",
+      "timeout": 40,
+      "note": "B21 等確認鈕出現＝翻牌動畫真的結束了"
+    }
+  ],
+  "reset_flow": [
+    {
+      "do": "click_at",
+      "pos": [
+        281,
+        947
+      ],
+      "note": "C0 按確認收下卡片",
+      "settle": 1.0
+    },
+    {
+      "do": "sleep",
+      "sec": 2.5,
+      "note": "C0b 等回到組合畫面"
+    },
+    {
+      "do": "spam_at",
+      "pos": [
+        512,
+        1003
+      ],
+      "until": "選單_設定.png",
+      "timeout": 30,
+      "interval": 1.5,
+      "note": "C1 點右下角四方格開選單，點到設定出現（單次點擊沒生效的話下一步會白等）"
+    },
+    {
+      "do": "click",
+      "template": "選單_設定.png",
+      "timeout": 20,
+      "note": "C2 點設定"
+    },
+    {
+      "do": "click",
+      "template": "分頁_帳號.png",
+      "timeout": 20,
+      "note": "C3 切到帳號分頁"
+    },
+    {
+      "do": "click",
+      "template": "重置遊戲.png",
+      "timeout": 20,
+      "note": "C4 點重置遊戲"
+    },
+    {
+      "do": "click",
+      "template": "重置_確定1.png",
+      "timeout": 20,
+      "note": "C5 第一次確定"
+    },
+    {
+      "do": "wait_for",
+      "template": "重置_對話框2內文.png",
+      "timeout": 20,
+      "note": "C6 等第二個對話框（兩個對話框長得像，靠內文區分）"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        390,
+        712
+      ],
+      "note": "C7 第二次確定",
+      "settle": 0.8
+    },
+    {
+      "do": "paste",
+      "template": "重置_輸入框.png",
+      "text": "勁旅對決",
+      "timeout": 20,
+      "focus_wait": 1.5,
+      "paste_wait": 2.0,
+      "note": "C8 點輸入框並打入勁旅對決（ADB 模式走 ldconsole call.input，不碰剪貼簿）"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        390,
+        712
+      ],
+      "note": "C9 關掉輸入列",
+      "settle": 0.8
+    },
+    {
+      "do": "click",
+      "template": "重置_最終確定.png",
+      "timeout": 20,
+      "note": "C10 最終確定，執行重置"
+    },
+    {
+      "do": "wait_for",
+      "template": "創立球隊.png",
+      "timeout": 120,
+      "note": "C11 等重置完成回到創立球隊。不清資料所以不用重走條款／訪客登入，約 35 秒"
+    }
+  ],
+  "recover_flow": [
+    {
+      "do": "sleep",
+      "sec": 2.0,
+      "note": "R1 等畫面穩定"
+    },
+    {
+      "do": "spam",
+      "template": "Skip.png",
+      "until": [
+        "跳過教學_確定.png",
+        "主畫面_已選.png"
+      ],
+      "timeout": 120,
+      "interval": 1.5,
+      "optional": true,
+      "note": "R1b 重開後若停在教學中，先跳過教學。跳過會先跳出確認框，所以 until 要同時收兩種結果（跟開場流程 A9 一樣）——只等主畫面的話，確認框一出現就再也沒人按它，會一路空等到逾時"
+    },
+    {
+      "do": "click",
+      "template": "跳過教學_確定.png",
+      "timeout": 30,
+      "optional": true,
+      "note": "R1c 確定跳過教學（沒跳確認框就跳過這步）"
+    },
+    {
+      "do": "spam",
+      "template": "導覽_選單.png",
+      "until": "選單_設定.png",
+      "timeout": 40,
+      "interval": 1.5,
+      "note": "R2 從主畫面右下角開選單（這個模板只在主畫面比對得到，座標和組合畫面不同，所以用模板不用寫死座標）"
+    },
+    {
+      "do": "click",
+      "template": "選單_設定.png",
+      "timeout": 20,
+      "note": "R3 點設定"
+    },
+    {
+      "do": "click",
+      "template": "分頁_帳號.png",
+      "timeout": 20,
+      "note": "R4 切到帳號分頁"
+    },
+    {
+      "do": "click",
+      "template": "重置遊戲.png",
+      "timeout": 20,
+      "note": "R5 點重置遊戲"
+    },
+    {
+      "do": "click",
+      "template": "重置_確定1.png",
+      "timeout": 20,
+      "note": "R6 第一次確定"
+    },
+    {
+      "do": "wait_for",
+      "template": "重置_對話框2內文.png",
+      "timeout": 20,
+      "note": "R7 等第二個對話框（靠內文區分）"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        390,
+        712
+      ],
+      "note": "R8 第二次確定",
+      "settle": 0.8
+    },
+    {
+      "do": "paste",
+      "template": "重置_輸入框.png",
+      "text": "勁旅對決",
+      "timeout": 20,
+      "focus_wait": 1.5,
+      "paste_wait": 2.0,
+      "note": "R9 打入勁旅對決"
+    },
+    {
+      "do": "click_at",
+      "pos": [
+        390,
+        712
+      ],
+      "note": "R10 關掉輸入列",
+      "settle": 0.8
+    },
+    {
+      "do": "click",
+      "template": "重置_最終確定.png",
+      "timeout": 20,
+      "note": "R11 最終確定，執行重置"
+    },
+    {
+      "do": "wait_for",
+      "template": "創立球隊.png",
+      "timeout": 120,
+      "note": "R12 等回到創立球隊"
+    }
+  ],
+  "window_pos": [
+    1074,
+    -11
+  ],
+  "game_window_size": [
+    603,
+    1031
+  ],
+  "launcher_icon": "遊戲圖示.png",
+  "relaunch_timeout": 240,
+  "dismiss_popups": [
+    {
+      "template": "彈窗_每日簽到.png",
+      "offset": [
+        1,
+        721
+      ],
+      "wait": 2.5,
+      "note": "每日簽到 → 點底部的 X 關掉。只在跨日的第一輪出現，所以跑一整晚才會撞上一次"
+    },
+    {
+      "template": "訪客登入.png",
+      "wait": 3.0,
+      "note": "綁定帳號 → 繼續以訪客身分進行遊戲"
+    },
+    {
+      "template": "彈窗_體驗分享.png",
+      "offset": [
+        188,
+        -21
+      ],
+      "wait": 2.5,
+      "note": "體驗分享時刻 → 點右上角 X（不能點「結束」，那可能會關掉遊戲）"
+    },
+    {
+      "template": "彈窗_輸入錯誤.png",
+      "offset": [
+        -4,
+        176
+      ],
+      "wait": 2.5,
+      "note": "重置文字輸入失敗 → 按確定關掉，讓流程重跑一次重置"
+    },
+    {
+      "template": "條款_同意鈕.png",
+      "wait": 3.0,
+      "note": "使用條款 → 全部同意並開始"
+    },
+    {
+      "template": "首次_開始遊戲.png",
+      "wait": 3.0,
+      "note": "首次啟動球隊瀏覽 → 開始遊戲"
+    },
+    {
+      "template": "登入_訪客.png",
+      "wait": 4.0,
+      "note": "選擇登入方式 → 使用訪客登入"
+    }
+  ],
+  "notify_mail": {
+    "enabled": true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "use_tls": true,
+    "user": "b110212000@gmail.com",
+    "from": "b110212000@gmail.com",
+    "to": "b110212000@gmail.com",
+    "password_env": "REROLL_SMTP_PASS",
+    "timeout": 30
+  },
+  "ovr_region": [
+    185,
+    200,
+    55,
+    50
+  ],
+  "hit_targets": [
+    {
+      "keywords": [
+        "urakam",
+        "Murakami",
+        "akam"
+      ],
+      "ovr": 76,
+      "note": "M. Murakami"
+    },
+    {
+      "keywords": [
+        "aminer",
+        "Caminero",
+        "inero"
+      ],
+      "ovr": 76,
+      "note": "J. Caminero"
+    },
+    {
+      "keywords": [
+        "cGwire",
+        "McGwire",
+        "Gwire"
+      ],
+      "ovr": 80,
+      "note": "M. McGwire"
+    }
+  ],
+  "auto_recover": false,
+  "input_mode": "adb",
+  "adb": {
+    "exe": "C:\\LDPlayer\\LDPlayer14\\adb.exe",
+    "serial": "emulator-5554",
+    "ld_index": 0,
+    "device_size": [
+      900,
+      1600
+    ],
+    "scale": 0.62,
+    "offset": [
+      3,
+      40
+    ],
+    "canvas": [
+      603,
+      1031
+    ],
+    "package": "com.com2us.futuremlb.android.google.global.normal",
+    "activity": "com.com2us.futuremlb.android.google.global.normal/com.com2us.futuremlb.MainActivity",
+    "grant_permissions": [
+      "android.permission.POST_NOTIFICATIONS"
+    ]
+  },
+  "self_heal_attempts": 2,
+  "wait_for_human": true,
+  "human_check_interval": 20,
+  "human_wait_timeout": 0,
+  "instances": {
+    "A": {
+      "serial": "emulator-5554",
+      "ld_index": 0
+    },
+    "B": {
+      "serial": "emulator-5556",
+      "ld_index": 1
+    }
+  }
+}
