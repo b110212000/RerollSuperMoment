@@ -19,10 +19,38 @@ MLB 9 局職棒 勁旅對決 26（MLB 9 Innings Rivals）的刷初始帳號腳�
 
 ## 事前準備
 
+模擬器那些設定可以一次做完：
+
+```powershell
+.\setup_emulator.ps1
+```
+
+或直接雙擊 `setup_emulator.bat`（同一支腳本，只是幫你繞過執行原則）。
+
+它會做解析度、DPI、語言、CPU/RAM，沒有第二台就用 `copy` 複製一台並打散裝置識別碼，
+最後開機、等 ADB 上線、逐項驗證、把遊戲開起來。**只改需要改的，重複執行安全**，
+不會多建出第三台。
+
+有 `reroll.py` / `watchdog.py` 在跑時它會拒絕執行——關掉模擬器會讓那一輪作廢。
+先按 F12 停掉，真的要打斷就加 `-Force`。
+
+```powershell
+.\setup_emulator.ps1 -Yes       # 不問確認
+.\setup_emulator.ps1 -Single    # 只設定第一台，不複製第二台
+```
+
+**它做不到的兩件事**（跑完會列出來）：安裝遊戲要登入 Google Play；
+首次啟動到「創立球隊」要好幾分鐘，而腳本只等 30 秒，第一次得手動。
+
+下面是這些設定各自的意義，腳本失敗或想自己來的時候看。
+
+### 手動做的話
+
+
 `templates/` 裡的 43 個模板是「照著特定畫面裁出來的圖」，靠像素比對定位按鈕。
 所以模擬器的畫面必須跟當初裁模板時一模一樣，下面每一項都會影響比對結果。
 
-**1. 模擬器設定成 1600x900 / DPI 240**
+**模擬器設定成 1600x900 / DPI 240**
 
 ```powershell
 & "C:\LDPlayer\LDPlayer14\ldconsole.exe" modify --index 0 --resolution 1600,900,240
@@ -44,13 +72,13 @@ MLB 9 局職棒 勁旅對決 26（MLB 9 Innings Rivals）的刷初始帳號腳�
 而不像「設定錯了」。程式開跑前會驗（設定檔的 `adb.device_size`），對不上直接擋下來
 不讓你白跑一整晚。
 
-**2. 模擬器語言設成繁體中文**
+**模擬器語言設成繁體中文**
 
 模板上的字都是繁體中文（「陣容」、「組合」、「重置遊戲」…）。
 語言不對的話，凡是含文字的模板全部比不到。
 在模擬器裡：設定 → 語言與輸入 → 選「中文（繁體）」。
 
-**3. 安裝遊戲並登入到「創立球隊」畫面**
+**安裝遊戲並登入到「創立球隊」畫面**
 
 從模擬器內的 Google Play 搜尋「MLB 9 局職棒 勁旅對決」安裝
 （套件名 `com.com2us.futuremlb.android.google.global.normal`）。
@@ -63,7 +91,7 @@ MLB 9 局職棒 勁旅對決 26（MLB 9 Innings Rivals）的刷初始帳號腳�
 
 腳本的起點與終點都是「創立球隊」畫面——開跑前請確認停在那裡。
 
-**4.（雙開才需要）複製第二個實例**
+**（雙開才需要）複製第二個實例**
 
 ```powershell
 & "C:\LDPlayer\LDPlayer14\ldconsole.exe" quit --index 0
@@ -165,5 +193,7 @@ python reroll.py mail                  # 寄測試信
 | `watchdog.py` | 看門狗。管一到多個實例，偵測卡住並重開 |
 | `reroll_config.json` | 所有流程、座標、命中條件、實例設定 |
 | `templates/` | 43 個畫面模板 |
+| `setup_emulator.ps1` | 模擬器一鍵設定：解析度／語言／資源／複製第二台，並驗證 |
+| `setup_emulator.bat` | 上面那支的啟動器（雙擊即可） |
 
 `shots/`、`hits/`、`*.log` 是執行期產物，沒有進版控。
