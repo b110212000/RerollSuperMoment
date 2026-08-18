@@ -1,5 +1,7 @@
 # RerollSuperMoment
 
+建議先自己按一次 把遊戲預設的部分先開啟 再使用指令執行即可
+
 MLB 9 局職棒 勁旅對決 26（MLB 9 Innings Rivals）的刷初始帳號腳本。
 
 在 LDPlayer 安卓模擬器上自動重複「建隊 → 換卡 → 組合 → 抽卡 → 判定 → 重置」，
