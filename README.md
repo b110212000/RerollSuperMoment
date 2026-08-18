@@ -13,11 +13,82 @@ MLB 9 局職棒 勁旅對決 26（MLB 9 Innings Rivals）的刷初始帳號腳�
 
 - Windows
 - Python 3.12+ 與 `pip install opencv-python numpy mss pydirectinput pygetwindow pytesseract`
-- [LDPlayer](https://www.ldplayer.tw/)（預設路徑 `C:\LDPlayer\LDPlayer14`），解析度 **1600x900 / DPI 240**
+- [LDPlayer](https://www.ldplayer.tw/)（預設路徑 `C:\LDPlayer\LDPlayer14`）
 - [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)（判定卡片名字用）
+- **遊戲本體**：MLB 9 局職棒 勁旅對決 26，裝在模擬器裡（見下面的事前準備）
 
-解析度必須一致：`templates/` 裡的 43 個模板都是在 1600x900 / 240dpi 上裁的，
-換解析度會讓每一步都對不上。程式在開跑前會驗，對不上直接擋下來。
+## 事前準備
+
+`templates/` 裡的 43 個模板是「照著特定畫面裁出來的圖」，靠像素比對定位按鈕。
+所以模擬器的畫面必須跟當初裁模板時一模一樣，下面每一項都會影響比對結果。
+
+**1. 模擬器設定成 1600x900 / DPI 240**
+
+```powershell
+& "C:\LDPlayer\LDPlayer14\ldconsole.exe" modify --index 0 --resolution 1600,900,240
+```
+
+`--resolution` 的順序是 `寬,高,dpi`，而且要在模擬器**關機時**改（開著改要重開才生效）。
+也可以在模擬器的設定介面裡改，結果一樣。
+
+改完務必驗一下，這是唯一能確定沒設錯的方法：
+
+```powershell
+& "C:\LDPlayer\LDPlayer14\adb.exe" -s emulator-5554 shell wm size      # 要回報 1600x900
+& "C:\LDPlayer\LDPlayer14\adb.exe" -s emulator-5554 shell wm density   # 要回報 240
+```
+
+（遊戲是直向的，所以 `screencap` 抓出來會是 900x1600——那是旋轉後的結果，正常。）
+
+解析度或 DPI 不對，43 個模板會一起失效——每一步都對不上，看起來像整個流程壞掉，
+而不像「設定錯了」。程式開跑前會驗（設定檔的 `adb.device_size`），對不上直接擋下來
+不讓你白跑一整晚。
+
+**2. 模擬器語言設成繁體中文**
+
+模板上的字都是繁體中文（「陣容」、「組合」、「重置遊戲」…）。
+語言不對的話，凡是含文字的模板全部比不到。
+在模擬器裡：設定 → 語言與輸入 → 選「中文（繁體）」。
+
+**3. 安裝遊戲並登入到「創立球隊」畫面**
+
+從模擬器內的 Google Play 搜尋「MLB 9 局職棒 勁旅對決」安裝
+（套件名 `com.com2us.futuremlb.android.google.global.normal`）。
+
+裝好後**手動**開一次，把首次啟動流程走完：同意使用條款 → 選「使用訪客登入」→
+一路到出現「創立球隊」的畫面。
+
+第一次要手動，是因為首次啟動流程要走好幾分鐘，而腳本等「創立球隊」只等 30 秒。
+之後每一輪都由腳本自己重置回這個畫面，不用再管。
+
+腳本的起點與終點都是「創立球隊」畫面——開跑前請確認停在那裡。
+
+**4.（雙開才需要）複製第二個實例**
+
+```powershell
+& "C:\LDPlayer\LDPlayer14\ldconsole.exe" quit --index 0
+& "C:\LDPlayer\LDPlayer14\ldconsole.exe" copy --name LDPlayer-2 --from 0
+& "C:\LDPlayer\LDPlayer14\ldconsole.exe" modify --index 1 --imei auto --androidid auto --mac auto --imsi auto --simserial auto
+```
+
+一定要用 `copy` 而不是 `add`：`copy` 會把**已經裝好的遊戲和解析度設定一起複製過去**，
+`add` 出來的是空的模擬器，還得重裝遊戲、重設解析度、再手動登入一次。
+`modify` 那行是把裝置識別碼打散，避免遊戲把兩台當成同一台裝置。
+
+複製完啟動兩台，用 `adb devices` 確認 serial（通常是 `emulator-5554` 和 `emulator-5556`），
+填進設定檔的 `instances`。
+
+### 版本相依
+
+模板是在**遊戲 4.04.00** 上裁的。遊戲改版動到 UI 的話，對應的模板要重裁：
+
+```powershell
+python reroll.py shot                  # 截一張現在的畫面
+python reroll.py test 陣容.png          # 看某個模板還對不對（分數低於 0.85 就要重裁）
+```
+
+重裁一定要從 `reroll.py shot` 截出來的圖上裁，不能自己另外截圖——
+經過的縮放路徑不一樣，比對不會過。
 
 ## 設定
 
