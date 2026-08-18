@@ -485,6 +485,15 @@
     },
     {
       "do": "spam",
+      "template": "翻牌_確認.png",
+      "until": "導覽_選單.png",
+      "timeout": 60,
+      "interval": 1.5,
+      "optional": true,
+      "note": "R1d 帳號可能停在有待確認按鈕的畫面（例如一張還沒收下的卡片）。App 重開後遊戲會回到那個畫面而不是主畫面，選單鈕永遠不會出現，下一步就會一直逾時。先把它按掉，直到主畫面的選單鈕出現。"
+    },
+    {
+      "do": "spam",
       "template": "導覽_選單.png",
       "until": "選單_設定.png",
       "timeout": 40,
