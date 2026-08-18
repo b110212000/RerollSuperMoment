@@ -172,10 +172,19 @@ class NeedsHuman(Exception):
     """
     這個狀況要人看一眼才知道怎麼處理，不要自動重置。
 
-    存在的理由：預設的失敗處理是走復原流程，也就是 app_reset（清掉整個帳號）。
-    對「畫面對不上」那類失敗這樣做沒問題，但有些狀況需要保留現場才問得出
-    解法——洗掉之後就沒有線索了。標了 on_fail: "ask" 的步驟走這條路。
+    存在的理由：預設的失敗處理是走復原流程，會把帳號重置掉。對「畫面對不上」
+    那類失敗這樣做沒問題，但有些狀況需要保留現場才問得出解法。
+
+    no_heal=True 代表連自救都不准做。自救會關掉 App 再走一次遊戲內重置，
+    對「卡片可能就是你要的、只是數字讀不準」這種狀況，那等於把要保護的東西
+    親手毀掉。
     """
+
+    def __init__(self, msg, no_heal=False, subject=None, urgent=False):
+        super().__init__(msg)
+        self.no_heal = no_heal
+        self.subject = subject        # 信件主旨，None＝用預設的「卡住了」
+        self.urgent = urgent          # 可能是命中，措辭要讓人立刻處理
 
 
 def log(msg):
@@ -233,6 +242,24 @@ def smtp_password(cfg):
             return winreg.QueryValueEx(k, env_name)[0] or ""
     except Exception:
         return ""
+
+
+# 通知信的內文。抽成常數是因為它們有多行、內含換行，直接內嵌在 f-string 裡
+# 很容易在編輯時被跳脫字元弄壞。
+URGENT_BODY = (
+    "卡片還在畫面上，帳號沒有被重置，也刻意沒有做任何自救\n"
+    "（自救會重開 App 並重置帳號，那會毀掉這張卡）。\n\n"
+    "請自己看附圖那張卡是不是你要的：\n"
+    "  · 是 → 自己收下並綁定帳號，然後按 F12 停掉\n"
+    "  · 不是 → 把畫面弄回「創立球隊」，程式會自己繼續\n"
+)
+
+STALL_BODY = (
+    "已經自己試過 {tries} 次「關掉 App 重開（不刪資料）」，都沒有回到創立球隊，\n"
+    "所以才通知你。附圖是卡住當下的畫面（自救前拍的）。\n\n"
+    "處理方式：把畫面弄回「創立球隊」就好，程式會自己偵測到並繼續，\n"
+    "不用回來重新下指令。"
+)
 
 
 def send_mail(cfg, subject, body, attach=None):
@@ -924,26 +951,46 @@ def ocr_text(img, lang):
     return best
 
 
-def ocr_digits(img):
-    """
-    只讀數字（卡片左上角的 OVR）。限定字元集能大幅提升準確度——
-    不限定的話 6 容易被讀成 b、8 讀成 B。讀不到回 None。
-    """
+def _ocr_digits_once(img, thresh_v, scale, psm):
     if pytesseract is None:
         return None
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, np.array([0, 0, 200], np.uint8),
-                            np.array([179, 40, 255], np.uint8))
-    prepped = _prep_for_ocr(mask, scale=4.0)
+    mask = cv2.inRange(hsv, np.array([0, 0, thresh_v], np.uint8),
+                            np.array([179, 60, 255], np.uint8))
     try:
         txt = pytesseract.image_to_string(
-            prepped, lang="eng",
-            config="--psm 7 -c tessedit_char_whitelist=0123456789")
+            _prep_for_ocr(mask, scale=scale), lang="eng",
+            config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
     except Exception as e:
         log(f"數字 OCR 失敗：{e}")
         return None
     digits = "".join(c for c in txt if c.isdigit())
-    return int(digits) if digits else None
+    if not digits:
+        return None
+    return int(digits)
+
+
+def ocr_digits(img):
+    """
+    只讀數字（卡片左上角的 OVR）。回傳 (值, 可信) 兩個東西。
+
+    為什麼要投票而不是讀一次就算：單次讀取會漏掉前面那位數——實際發生過把
+    76 讀成 6，判定就把一張追了七百輪的卡當成沒中而重置掉。所以換成幾組不同
+    的前處理各讀一次，只有「多數一致」才算可信；不一致或讀不到就回 possible=False，
+    交給上層當成「可能中了」處理，寧可多停一次也不要丟掉真的命中。
+
+    OVR 是兩位數，所以只有兩位數的結果才進投票——一位數幾乎一定是漏字。
+    """
+    votes = []
+    for thresh_v, scale, psm in ((200, 4.0, 7), (170, 6.0, 7),
+                                 (200, 6.0, 10), (150, 4.0, 7)):
+        v = _ocr_digits_once(img, thresh_v, scale, psm)
+        if v is not None and 10 <= v <= 99:
+            votes.append(v)
+    if not votes:
+        return None, False
+    best = max(set(votes), key=votes.count)
+    return best, votes.count(best) >= 2
 
 
 def crop_region(frame, box):
@@ -1374,13 +1421,32 @@ class Bot:
                 continue
             label = tg.get("note") or kw
             want = tg.get("ovr")
+            # 名字命中就先存證據。之前只在判定為中時才存，所以誤判成沒中的那
+            # 兩張卡連截圖都沒有，事後查不出當時畫面長什麼樣。
+            try:
+                ev = os.path.join(
+                    self.hit_dir, f"namehit_{datetime.now():%Y%m%d_%H%M%S}.png")
+                imwrite_unicode(ev, frame)
+                log(f"    名字命中，已存證據：{ev}")
+            except Exception:
+                pass
             if not want:
                 return True, f"命中 {label}"
-            ovr = ocr_digits(crop_region(frame, self.cfg.get("ovr_region")))
-            log(f"    名字命中 {label}，卡片 OVR 讀到：{ovr}")
-            if ovr is not None and int(ovr) == int(want):
+            ovr, sure = ocr_digits(crop_region(frame, self.cfg.get("ovr_region")))
+            log(f"    名字命中 {label}，卡片 OVR 讀到：{ovr}"
+                + ("" if sure else "（讀不準）"))
+            if ovr is not None and sure and int(ovr) == int(want):
                 return True, f"命中 {label} 且 OVR={ovr}"
-            misses.append(f"{label} 的 OVR 是 {ovr}，要 {want}")
+            if not sure:
+                # 名字對上就別靠一個讀不準的數字決定丟掉。名字命中大約千輪
+                # 才兩次，多停一次只花幾分鐘；判錯一次是毀掉一張追了幾百輪的卡。
+                # 代價完全不對稱，所以這裡一律停下來讓人看。
+                raise NeedsHuman(
+                    f"名字命中 {label}，但 OVR 讀不準（讀到 {ovr}，目標 {want}）。"
+                    "沒有重置帳號，卡片還在畫面上，自己確認一下",
+                    no_heal=True, urgent=True,
+                    subject="可能中了！OVR 讀不準，要你自己確認")
+            misses.append(f"{label} 的 OVR 是 {ovr}（讀得準），要 {want}")
 
         return False, ("；".join(misses) if misses else "沒有符合的目標")
 
@@ -1599,7 +1665,9 @@ class Bot:
         frame, _ = self.grab()
         return bool(self.find("創立球隊.png", frame))
 
-    def wait_for_human(self, why):
+    def wait_for_human(self, why, allow_heal=True):
+        subject = getattr(why, 'subject', None)
+        urgent = bool(getattr(why, 'urgent', False))
         """
         卡住時的處理：先自己試著救，救不起來才通知人並等他處理。
 
@@ -1615,7 +1683,7 @@ class Bot:
         limit = float(self.cfg.get("human_wait_timeout", 0))   # 0＝一直等
 
         log("=" * 46)
-        log(f"！卡住了：{why}")
+        log(("★ " + str(why)) if urgent else f"！卡住了：{why}")
 
         # 先拍現場再自救。順序反過來的話，自救會關掉 App、重置帳號，
         # 等到真的要通知你時，該給你看的畫面早就不見了。
@@ -1630,6 +1698,10 @@ class Bot:
             pass
 
         tries = int(self.cfg.get("self_heal_attempts", 2))
+        if not allow_heal:
+            # 卡片可能就是要的，自救會把它重置掉，所以連試都不能試
+            log("  這種狀況不做自救（自救會重置帳號，可能毀掉這張卡），直接通知你")
+            tries = 0
         for i in range(1, tries + 1):
             log(f"  自救第 {i}/{tries} 次")
             try:
@@ -1642,7 +1714,8 @@ class Bot:
                 raise
             except Exception as e:
                 log(f"    自救出錯：{e}")
-        log(f"  自救 {tries} 次都沒用，通知你。")
+        if tries:
+            log(f"  自救 {tries} 次都沒用，通知你。")
         log("  畫面保留在原地，帳號沒有被清除。")
 
         if not self.cfg.get("wait_for_human", True):
@@ -1657,13 +1730,10 @@ class Bot:
         tag = f"[{INSTANCE}]" if INSTANCE else ""
         send_mail(
             self.cfg,
-            subject=f"[MLB 刷初始]{tag} 卡住了，自己救不起來",
+            subject=f"[MLB 刷初始]{tag} " + (subject or "卡住了，自己救不起來"),
             body=(f"{why}\n\n"
                   f"{'模擬器：' + INSTANCE + chr(10) if INSTANCE else ''}"
-                  f"已經自己試過 {tries} 次「關掉 App 重開（不刪資料）」，都沒有回到創立球隊，\n"
-                  "所以才通知你。附圖是卡住當下的畫面（自救前拍的）。\n\n"
-                  "處理方式：把畫面弄回「創立球隊」就好，程式會自己偵測到並繼續，\n"
-                  "不用回來重新下指令。"),
+                  + (URGENT_BODY if urgent else STALL_BODY.format(tries=tries))),
             attach=shot or None,
         )
 
@@ -1752,7 +1822,8 @@ class Bot:
                 except NeedsHuman as e:
                     # 停下來等人，處理好會自己接著跑。放在迴圈裡面而不是外面，
                     # 就是為了能繼續——在外面接的話這個 run() 就結束了。
-                    if not self.wait_for_human(e):
+                    if not self.wait_for_human(
+                            e, allow_heal=not getattr(e, "no_heal", False)):
                         break
                     fails += 1
                     streak = 0        # 人介入過了，不算連續失敗
