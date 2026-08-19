@@ -14,7 +14,7 @@ MLB 9 局職棒 勁旅對決 26（MLB 9 Innings Rivals）的刷初始帳號腳�
 - Windows
 - Python 3.12+ 與 `pip install opencv-python numpy mss pydirectinput pygetwindow pytesseract`
 - [LDPlayer](https://www.ldplayer.tw/)（預設路徑 `C:\LDPlayer\LDPlayer14`）
-- [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)（判定卡片名字用）
+- Tesseract OCR（判定卡片名字用，安裝步驟見下面「Tesseract OCR」一節）
 - **遊戲本體**：MLB 9 局職棒 勁旅對決 26，裝在模擬器裡（見下面的事前準備）
 
 ## 事前準備
@@ -105,6 +105,53 @@ MLB 9 局職棒 勁旅對決 26（MLB 9 Innings Rivals）的刷初始帳號腳�
 
 複製完啟動兩台，用 `adb devices` 確認 serial（通常是 `emulator-5554` 和 `emulator-5556`），
 填進設定檔的 `instances`。
+
+### Tesseract OCR
+
+判定「抽到的是誰」靠它讀卡片上的名字和左上角的 OVR，所以這個沒裝就不能跑。
+
+**1. 下載安裝檔**
+
+去 <https://github.com/UB-Mannheim/tesseract/wiki>，下載 64 位元的安裝檔
+（檔名長得像 `tesseract-ocr-w64-setup-5.4.0.20240606.exe`）。
+
+這是 Windows 上的標準建置版本，Tesseract 官方沒有出 Windows 安裝檔，都是用這個。
+
+**2. 裝到預設路徑**
+
+安裝時**不要改路徑**，讓它裝在：
+
+```
+C:\Program Files\Tesseract-OCR
+```
+
+設定檔的 `tesseract_cmd` 指的就是這裡。真的要裝到別的地方，記得把設定檔一起改：
+
+```json
+"tesseract_cmd": "D:\\你的路徑\\Tesseract-OCR\\tesseract.exe"
+```
+
+**語言包不用加選。** 安裝程式會列出一大串語言，全部不用勾——
+卡片名字是英文、OVR 是數字，預設的 `eng` 就夠了。
+遊戲介面雖然是繁體中文，但那是用圖片模板比對的，不經過 OCR。
+
+**3. 確認裝好了**
+
+```powershell
+& "C:\Program Files\Tesseract-OCR\tesseract.exe" --version
+```
+
+看到 `tesseract v5.x` 就對了。再確認程式那邊也讀得到：
+
+```powershell
+python reroll.py ocr
+```
+
+會截圖並印出讀到的文字。開跑時也會印一行 `OCR：可用`。
+
+**沒裝會怎樣**：命中條件是靠名字比對的，OCR 不能用的話每一輪都會判成沒中然後重置，
+跑一整晚也不可能中。所以開跑前會檢查，缺了就直接擋下來並告訴你怎麼裝，
+不會讓你白跑。
 
 ### 版本相依
 

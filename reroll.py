@@ -1785,6 +1785,19 @@ class Bot:
         log(f"開跑。上限 {max_rounds if max_rounds else '無限'} 輪，按 F12 或 Ctrl+C 中斷。")
         log(f"OCR：{'可用' if self.ocr_ok else '不可用（只靠圖片判定）'}")
         targets = self.cfg.get("hit_targets") or []
+        # 靠名字判定就非得有 OCR。沒有的話每一輪都會判成沒中然後重置——
+        # 跑一整晚也不可能中，而且只會安靜地燒時間。這種「保證不會成功」的
+        # 狀態不該讓它開跑。
+        if (targets or any(self.cfg.get("hit_keywords", []))) and not self.ocr_ok:
+            log("=" * 46)
+            log("！命中條件是靠卡片名字判定的，但 OCR 不能用，這樣跑再久也不會中。")
+            log(f"  設定檔指的路徑：{self.cfg.get('tesseract_cmd') or '（空的，會自動猜）'}")
+            log("  1. 從 https://github.com/UB-Mannheim/tesseract/wiki 下載 Windows 安裝檔")
+            log(r"  2. 裝到預設位置 C:\Program Files\Tesseract-OCR")
+            log("  3. 路徑不同的話，改設定檔的 tesseract_cmd")
+            log("  只想測流程、不判定的話，把 hit_targets 清空再跑。")
+            log("=" * 46)
+            raise RuntimeError("OCR 不可用，但命中條件需要它")
         if targets:
             log("命中條件（任一成立即停）：")
             for t in targets:
